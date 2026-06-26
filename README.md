@@ -2,6 +2,8 @@
 
 PanoView360 is a lightweight PHP application for hosting and viewing 360-degree panorama images. It provides a public thumbnail gallery, a full-screen panorama lightbox, and a protected admin area for uploads and ordering.
 
+Repository: https://github.com/Xesyliad/PanoView360
+
 ## Download
 
 You can obtain the project in one of two ways:
@@ -9,7 +11,7 @@ You can obtain the project in one of two ways:
 1. Clone the repository:
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/Xesyliad/PanoView360
 ```
 
 2. Download the repository as a ZIP archive from your source control provider and extract it to your web server document root or application directory.
