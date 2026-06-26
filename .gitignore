@@ -3,6 +3,7 @@ config.php
 AGENT.md
 IMPLEMENTATION.md
 PRODUCTION.md
+DESIGN.md
 data/*
 !data/.gitkeep
 uploads/*
