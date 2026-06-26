@@ -1,0 +1,14 @@
+cruiser.php
+config.php
+AGENT.md
+IMPLEMENTATION.md
+PRODUCTION.md
+data/*
+!data/.gitkeep
+uploads/*
+!uploads/panoramas/
+!uploads/thumbnails/
+uploads/panoramas/*
+uploads/thumbnails/*
+!uploads/panoramas/.gitkeep
+!uploads/thumbnails/.gitkeep
