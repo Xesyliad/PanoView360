@@ -24,39 +24,172 @@ function app_bootstrap(): void
     }
 
     if (!is_file(DATA_FILE)) {
-        file_put_contents(DATA_FILE, json_encode([], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        file_put_contents(DATA_FILE, json_encode(app_library_default_state(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
     }
 }
 
-function app_load_panoramas(): array
+function app_library_default_state(): array
+{
+    return [
+        'galleries' => [],
+        'panoramas' => [],
+    ];
+}
+
+function app_sanitize_gallery_name(string $value): string
+{
+    $value = trim(preg_replace('/\s+/', ' ', $value) ?? '');
+    return $value !== '' ? $value : 'Untitled Gallery';
+}
+
+function app_is_panorama_ratio(int $width, int $height): bool
+{
+    if ($width <= 0 || $height <= 0) {
+        return false;
+    }
+
+    return ($width / $height) >= 1.8;
+}
+
+function app_detect_viewer_mode_for_path(string $path): string
+{
+    if (!is_file($path)) {
+        return 'flat';
+    }
+
+    $info = @getimagesize($path);
+    if (!is_array($info)) {
+        return 'flat';
+    }
+
+    $width = (int) ($info[0] ?? 0);
+    $height = (int) ($info[1] ?? 0);
+    return app_is_panorama_ratio($width, $height) ? 'panorama' : 'flat';
+}
+
+function app_load_library_state(): array
 {
     if (!is_file(DATA_FILE)) {
-        return [];
+        return app_library_default_state();
     }
 
     $raw = file_get_contents(DATA_FILE);
     if ($raw === false || trim($raw) === '') {
-        return [];
+        return app_library_default_state();
     }
 
-    $items = json_decode($raw, true);
-    if (!is_array($items)) {
-        return [];
+    $data = json_decode($raw, true);
+    if (!is_array($data)) {
+        return app_library_default_state();
     }
 
-    usort($items, static fn (array $a, array $b): int => ($a['display_order'] ?? 0) <=> ($b['display_order'] ?? 0));
-    return array_values($items);
+    return app_normalize_library_state($data);
 }
 
-function app_save_panoramas(array $items): bool
+function app_normalize_library_state(array $data): array
 {
-    $items = array_values($items);
-    foreach ($items as $index => &$item) {
-        $item['display_order'] = $index + 1;
+    if (array_is_list($data)) {
+        $data = ['galleries' => [], 'panoramas' => $data];
     }
-    unset($item);
 
-    $json = json_encode($items, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    $galleries = [];
+    $galleryPosition = 0;
+    foreach (($data['galleries'] ?? []) as $gallery) {
+        if (!is_array($gallery)) {
+            continue;
+        }
+
+        $galleryPosition++;
+        $id = trim((string) ($gallery['id'] ?? ''));
+        if ($id === '') {
+            $id = bin2hex(random_bytes(8));
+        }
+
+        $name = app_sanitize_gallery_name((string) ($gallery['name'] ?? ''));
+        $displayOrder = (int) ($gallery['display_order'] ?? $galleryPosition);
+        $galleries[] = [
+            'id' => $id,
+            'name' => $name,
+            'display_order' => $displayOrder,
+        ];
+    }
+
+    usort($galleries, static fn (array $a, array $b): int => ($a['display_order'] ?? 0) <=> ($b['display_order'] ?? 0));
+    $galleriesById = [];
+    foreach ($galleries as $gallery) {
+        $galleriesById[$gallery['id']] = $gallery;
+    }
+
+    $groupedPanoramas = [];
+    $unassignedPanoramas = [];
+    $panoPosition = 0;
+    foreach (($data['panoramas'] ?? []) as $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+
+        $panoPosition++;
+        $id = trim((string) ($item['id'] ?? ''));
+        if ($id === '') {
+            $id = bin2hex(random_bytes(8));
+        }
+
+        $galleryId = trim((string) ($item['gallery_id'] ?? ''));
+        if ($galleryId === '' || !isset($galleriesById[$galleryId])) {
+            $galleryId = '';
+        }
+
+        $imagePath = (string) ($item['image_path'] ?? '');
+        $viewerMode = (string) ($item['viewer_mode'] ?? '');
+        if (!in_array($viewerMode, ['panorama', 'flat'], true)) {
+            $viewerMode = $imagePath !== '' ? app_detect_viewer_mode_for_path(APP_ROOT . '/' . ltrim($imagePath, '/')) : 'flat';
+        }
+
+        $normalizedItem = $item;
+        $normalizedItem['id'] = $id;
+        $normalizedItem['gallery_id'] = $galleryId;
+        $normalizedItem['viewer_mode'] = $viewerMode;
+        $normalizedItem['display_order'] = (int) ($item['display_order'] ?? $panoPosition);
+
+        if ($galleryId === '') {
+            $unassignedPanoramas[] = $normalizedItem;
+            continue;
+        }
+
+        $groupedPanoramas[$galleryId][] = $normalizedItem;
+    }
+
+    $panoramas = [];
+    foreach ($galleries as $gallery) {
+        $group = $groupedPanoramas[$gallery['id']] ?? [];
+        usort($group, static fn (array $a, array $b): int => ($a['display_order'] ?? 0) <=> ($b['display_order'] ?? 0));
+        foreach ($group as $index => $item) {
+            $item['display_order'] = $index + 1;
+            $panoramas[] = $item;
+        }
+    }
+
+    usort($unassignedPanoramas, static fn (array $a, array $b): int => ($a['display_order'] ?? 0) <=> ($b['display_order'] ?? 0));
+    foreach ($unassignedPanoramas as $index => $item) {
+        $item['display_order'] = $index + 1;
+        $panoramas[] = $item;
+    }
+
+    foreach ($galleries as $index => &$gallery) {
+        $gallery['display_order'] = $index + 1;
+    }
+    unset($gallery);
+
+    return [
+        'galleries' => $galleries,
+        'panoramas' => $panoramas,
+    ];
+}
+
+function app_save_library_state(array $state): bool
+{
+    $state = app_normalize_library_state($state);
+    $json = json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     if ($json === false) {
         return false;
     }
@@ -69,6 +202,19 @@ function app_save_panoramas(array $items): bool
     return rename($tmp, DATA_FILE);
 }
 
+function app_load_panoramas(): array
+{
+    return app_load_library_state()['panoramas'];
+}
+
+function app_save_panoramas(array $items): bool
+{
+    return app_save_library_state([
+        'galleries' => [],
+        'panoramas' => $items,
+    ]);
+}
+
 function app_find_pano_index(array $items, string $id): int
 {
     foreach ($items as $index => $item) {
@@ -78,6 +224,70 @@ function app_find_pano_index(array $items, string $id): int
     }
 
     return -1;
+}
+
+function app_find_gallery_index(array $galleries, string $id): int
+{
+    foreach ($galleries as $index => $gallery) {
+        if (($gallery['id'] ?? '') === $id) {
+            return $index;
+        }
+    }
+
+    return -1;
+}
+
+function app_item_viewer_mode(array $item): string
+{
+    $viewerMode = (string) ($item['viewer_mode'] ?? '');
+    if (in_array($viewerMode, ['panorama', 'flat'], true)) {
+        return $viewerMode;
+    }
+
+    $imagePath = (string) ($item['image_path'] ?? '');
+    if ($imagePath === '') {
+        return 'flat';
+    }
+
+    return app_detect_viewer_mode_for_path(APP_ROOT . '/' . ltrim($imagePath, '/'));
+}
+
+function app_group_panoramas_by_gallery(array $state, bool $includeUnassigned = true): array
+{
+    $galleries = $state['galleries'] ?? [];
+    $panoramas = $state['panoramas'] ?? [];
+
+    $galleryMap = [];
+    foreach ($galleries as $gallery) {
+        if (is_array($gallery) && isset($gallery['id'])) {
+            $galleryMap[(string) $gallery['id']] = [
+                'gallery' => $gallery,
+                'panoramas' => [],
+            ];
+        }
+    }
+
+    $unassigned = [];
+    foreach ($panoramas as $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+
+        $galleryId = (string) ($item['gallery_id'] ?? '');
+        if ($galleryId !== '' && isset($galleryMap[$galleryId])) {
+            $galleryMap[$galleryId]['panoramas'][] = $item;
+            continue;
+        }
+
+        if ($includeUnassigned) {
+            $unassigned[] = $item;
+        }
+    }
+
+    return [
+        'galleries' => $galleryMap,
+        'unassigned' => $unassigned,
+    ];
 }
 
 function app_sanitize_title(string $value): string
@@ -492,7 +702,7 @@ function app_create_thumbnail(string $sourcePath, string $thumbPath, string $mim
             }
 
             $sourceRatio = $srcWidth / $srcHeight;
-            if ($sourceRatio >= 1.8) {
+            if (app_is_panorama_ratio($srcWidth, $srcHeight)) {
                 $result = app_render_panorama_thumbnail($image, $srcWidth, $srcHeight, $thumbPath, $pitch, $yaw, $hfov);
             } else {
                 $image->setImageFormat('jpeg');
@@ -522,7 +732,7 @@ function app_create_thumbnail(string $sourcePath, string $thumbPath, string $mim
         }
 
         $sourceRatio = $srcWidth / $srcHeight;
-        if ($sourceRatio >= 1.8) {
+        if (app_is_panorama_ratio($srcWidth, $srcHeight)) {
             $result = app_render_panorama_thumbnail($source, $srcWidth, $srcHeight, $thumbPath, $pitch, $yaw, $hfov);
             imagedestroy($source);
             return $result;

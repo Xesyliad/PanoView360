@@ -2,7 +2,9 @@
     const lightbox = document.getElementById('lightbox');
     const viewerRoot = document.getElementById('viewerStage');
     const closeButton = document.getElementById('lightboxClose');
-    const cards = document.querySelectorAll('.thumb-card');
+    const prevButton = document.getElementById('lightboxPrev');
+    const nextButton = document.getElementById('lightboxNext');
+    const cards = Array.from(document.querySelectorAll('.thumb-card'));
     const locationOverlay = document.getElementById('locationOverlay');
     const locationLink = document.getElementById('locationLink');
     const locationMap = document.getElementById('locationMap');
@@ -14,6 +16,7 @@
     let panoramaViewer = null;
     let locationMapInstance = null;
     let openTrigger = null;
+    let currentIndex = -1;
 
     function destroyPanoramaViewer() {
         if (panoramaViewer && typeof panoramaViewer.destroy === 'function') {
@@ -21,6 +24,7 @@
         }
         panoramaViewer = null;
         viewerRoot.innerHTML = '';
+        viewerRoot.classList.remove('is-flat');
     }
 
     function destroyLocationMap() {
@@ -34,6 +38,7 @@
         if (locationLink) {
             locationLink.removeAttribute('href');
             locationLink.hidden = true;
+            locationLink.onclick = null;
         }
         if (locationOverlay) {
             locationOverlay.classList.remove('has-location');
@@ -49,8 +54,6 @@
         const rawLng = (card.dataset.lng || '').trim();
         const lat = rawLat === '' ? null : Number(rawLat);
         const lng = rawLng === '' ? null : Number(rawLng);
-
-        destroyLocationMap();
 
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
             return;
@@ -130,24 +133,72 @@
         });
     }
 
+    function renderFlatImage(card) {
+        const image = document.createElement('img');
+        image.className = 'flat-viewer-image';
+        image.alt = card.dataset.title || '';
+        image.src = card.dataset.image || '';
+        image.loading = 'eager';
+        viewerRoot.classList.add('is-flat');
+        viewerRoot.appendChild(image);
+    }
+
+    function updateNavigationState() {
+        const hasMultiple = cards.length > 1;
+        if (prevButton) {
+            prevButton.disabled = !hasMultiple;
+        }
+        if (nextButton) {
+            nextButton.disabled = !hasMultiple;
+        }
+    }
+
+    function renderCurrentCard(card) {
+        destroyPanoramaViewer();
+        destroyLocationMap();
+
+        if ((card.dataset.viewerMode || 'panorama') === 'flat') {
+            renderFlatImage(card);
+        } else {
+            initPanorama(card);
+        }
+
+        renderLocation(card);
+        updateNavigationState();
+    }
+
     function setViewportAspect() {
         const aspect = window.innerWidth / Math.max(window.innerHeight, 1);
         document.documentElement.style.setProperty('--viewport-aspect', String(aspect));
     }
 
+    function showCard(index) {
+        if (!cards.length) {
+            return;
+        }
+
+        currentIndex = ((index % cards.length) + cards.length) % cards.length;
+        renderCurrentCard(cards[currentIndex]);
+    }
+
+    function moveCard(step) {
+        if (!cards.length) {
+            return;
+        }
+
+        showCard(currentIndex < 0 ? 0 : currentIndex + step);
+    }
+
     function openLightbox(card) {
         openTrigger = document.activeElement;
+        currentIndex = cards.indexOf(card);
         lightbox.classList.add('is-open');
         lightbox.setAttribute('aria-hidden', 'false');
         document.body.style.overflow = 'hidden';
 
         setViewportAspect();
-        destroyPanoramaViewer();
-        destroyLocationMap();
-
         requestAnimationFrame(() => {
-            initPanorama(card);
-            renderLocation(card);
+            showCard(currentIndex >= 0 ? currentIndex : 0);
         });
 
         closeButton.focus();
@@ -175,14 +226,23 @@
     });
 
     closeButton.addEventListener('click', closeLightbox);
+    prevButton?.addEventListener('click', () => moveCard(-1));
+    nextButton?.addEventListener('click', () => moveCard(1));
     lightbox.querySelector('[data-close]')?.addEventListener('click', closeLightbox);
 
     window.addEventListener('keydown', (event) => {
         if (!lightbox.classList.contains('is-open')) {
             return;
         }
+
         if (event.key === 'Escape') {
             closeLightbox();
+        } else if (event.key === 'ArrowLeft') {
+            event.preventDefault();
+            moveCard(-1);
+        } else if (event.key === 'ArrowRight') {
+            event.preventDefault();
+            moveCard(1);
         }
     });
 
@@ -196,4 +256,5 @@
     });
 
     setViewportAspect();
+    updateNavigationState();
 })();

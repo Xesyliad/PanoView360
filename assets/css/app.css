@@ -52,6 +52,29 @@ button, input {
         var(--bg);
 }
 
+.gallery-sections {
+    display: grid;
+    gap: 26px;
+}
+
+.gallery-section {
+    display: grid;
+    gap: 14px;
+}
+
+.gallery-title {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.gallery-separator {
+    width: 100%;
+    margin: 8px 0 0;
+    border: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
 .gallery-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -126,6 +149,48 @@ button, input {
     cursor: pointer;
 }
 
+.lightbox-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 3;
+    width: clamp(52px, 6vw, 84px);
+    height: clamp(92px, 18vh, 180px);
+    border: 0;
+    border-radius: 0;
+    background: rgba(10, 10, 10, 0.84);
+    color: var(--text);
+    font-size: clamp(28px, 3vw, 44px);
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.2;
+    transition: opacity 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+.lightbox-nav:hover,
+.lightbox-nav:focus-visible {
+    opacity: 1;
+    background: rgba(10, 10, 10, 0.96);
+    outline: none;
+}
+
+.lightbox-nav:disabled {
+    cursor: default;
+    pointer-events: none;
+}
+
+.lightbox-nav-prev {
+    left: 0;
+    border-top-right-radius: 18px;
+    border-bottom-right-radius: 18px;
+}
+
+.lightbox-nav-next {
+    right: 0;
+    border-top-left-radius: 18px;
+    border-bottom-left-radius: 18px;
+}
+
 .viewer-stage {
     position: absolute;
     inset: 0;
@@ -137,6 +202,20 @@ button, input {
     position: absolute;
     inset: 0;
     background: #000;
+}
+
+.pano-viewer.is-flat {
+    display: grid;
+    place-items: center;
+    background: #050505;
+}
+
+.flat-viewer-image {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: center;
+    background: #050505;
 }
 
 .pano-viewer .pnlm-container {
@@ -279,7 +358,8 @@ button, input {
 .field input[type="text"],
 .field input[type="password"],
 .field input[type="number"],
-.field input[type="file"] {
+.field input[type="file"],
+.field select {
     width: 100%;
     padding: 12px 14px;
     background: #0c0c0c;
@@ -297,6 +377,11 @@ button, input {
     padding: 11px 18px;
     cursor: pointer;
     font-weight: 650;
+}
+
+.button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
 }
 
 .button-ghost {
@@ -355,10 +440,62 @@ button, input {
     color: var(--muted);
     overflow-wrap: anywhere;
     font-size: 13px;
+    display: grid;
+    gap: 4px;
 }
 
 .muted {
     color: var(--muted);
+}
+
+.gallery-create-form {
+    max-width: 520px;
+}
+
+.gallery-note {
+    margin-top: 14px;
+}
+
+.gallery-admin-list {
+    display: grid;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.gallery-admin-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.gallery-title-form {
+    flex: 1 1 auto;
+    min-width: min(420px, 100%);
+}
+
+.library-section {
+    margin-top: 20px;
+}
+
+.library-section-header {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.item-form {
+    margin-top: 0;
+}
+
+.admin-meta .inline-form {
+    flex-wrap: wrap;
 }
 
 @media (max-width: 900px) {
@@ -378,6 +515,20 @@ button, input {
     .title-form {
         flex-wrap: wrap;
     }
+
+    .gallery-admin-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .gallery-title-form {
+        min-width: 0;
+    }
+
+    .library-section-header {
+        align-items: start;
+        flex-direction: column;
+    }
 }
 
 @media (max-width: 640px) {
@@ -390,6 +541,10 @@ button, input {
     .gallery-grid {
         grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
         gap: 10px;
+    }
+
+    .gallery-sections {
+        gap: 20px;
     }
 
     .lightbox-close {
@@ -405,5 +560,11 @@ button, input {
         bottom: 10px;
         width: clamp(150px, 32vw, 220px);
         max-height: 24vh;
+    }
+
+    .lightbox-nav {
+        width: 42px;
+        height: 72px;
+        font-size: 26px;
     }
 }

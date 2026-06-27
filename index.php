@@ -5,6 +5,5 @@ require_once __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/gallery.php';
 
 app_bootstrap();
-$items = app_load_panoramas();
-render_public_gallery($items);
-
+$state = app_load_library_state();
+render_public_gallery($state);
