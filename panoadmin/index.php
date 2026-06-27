@@ -56,10 +56,13 @@ if (app_is_admin()) {
                     $targetPath = PANORAMA_DIR . '/' . $safeName;
                     $thumbName = $fileBase . '.jpg';
                     $thumbPath = THUMB_DIR . '/' . $thumbName;
+                    $defaultPitch = app_parse_float($_POST['default_pitch'] ?? null, 0.0, -90.0, 90.0);
+                    $defaultYaw = app_parse_float($_POST['default_yaw'] ?? null, 0.0, -180.0, 180.0);
+                    $defaultFov = app_parse_float($_POST['default_fov'] ?? null, 100.0, 30.0, 120.0);
 
                     if (!move_uploaded_file($tmpPath, $targetPath)) {
                         $error = 'Unable to save the uploaded file.';
-                    } elseif (!app_create_thumbnail($targetPath, $thumbPath, $mime)) {
+                    } elseif (!app_create_thumbnail($targetPath, $thumbPath, $mime, $defaultPitch, $defaultYaw, $defaultFov)) {
                         @unlink($targetPath);
                         $error = 'Uploaded, but thumbnail generation failed.';
                     } else {
@@ -73,9 +76,9 @@ if (app_is_admin()) {
                             'title' => $title !== '' ? $title : app_title_from_filename($originalName),
                             'display_order' => $nextOrder,
                             'upload_date' => gmdate(DATE_ATOM),
-                            'default_pitch' => 0,
-                            'default_yaw' => 0,
-                            'default_fov' => 100,
+                            'default_pitch' => $defaultPitch,
+                            'default_yaw' => $defaultYaw,
+                            'default_fov' => $defaultFov,
                         ];
                         if (is_array($location)) {
                             $item['location_lat'] = $location['lat'];
@@ -198,6 +201,20 @@ $assetPrefix = '../';
                         <span>Title</span>
                         <input type="text" name="title" maxlength="120" placeholder="Optional title">
                     </label>
+                    <div class="field-grid">
+                        <label class="field">
+                            <span>Start pitch</span>
+                            <input type="number" name="default_pitch" step="0.1" min="-90" max="90" value="0">
+                        </label>
+                        <label class="field">
+                            <span>Start yaw</span>
+                            <input type="number" name="default_yaw" step="0.1" min="-180" max="180" value="0">
+                        </label>
+                        <label class="field">
+                            <span>Start FOV</span>
+                            <input type="number" name="default_fov" step="0.1" min="30" max="120" value="100">
+                        </label>
+                    </div>
                     <label class="field">
                         <span>Image file</span>
                         <input type="file" name="panorama" accept="image/jpeg,image/png,image/webp,image/gif" required>

@@ -86,6 +86,18 @@ function app_sanitize_title(string $value): string
     return $value !== '' ? $value : 'Untitled Panorama';
 }
 
+function app_parse_float(mixed $value, float $default, float $min, float $max): float
+{
+    if (is_string($value) || is_int($value) || is_float($value)) {
+        $value = trim((string) $value);
+        if ($value !== '' && is_numeric($value)) {
+            return max($min, min($max, (float) $value));
+        }
+    }
+
+    return max($min, min($max, $default));
+}
+
 function app_title_from_filename(string $name): string
 {
     return app_sanitize_title(pathinfo($name, PATHINFO_FILENAME));
@@ -270,16 +282,224 @@ function app_save_jpeg($image, string $path, int $quality = 86): bool
     return imagejpeg($image, $path, $quality);
 }
 
-function app_create_thumbnail(string $sourcePath, string $thumbPath, string $mime): bool
+function app_panorama_camera_fov(float $hfov, int $width, int $height): float
+{
+    $hfov = max(1.0, min(175.0, $hfov));
+    $aspect = $width / max($height, 1);
+    return rad2deg(2.0 * atan(tan(deg2rad($hfov) / 2.0) / $aspect));
+}
+
+function app_normalize_longitude(float $value): float
+{
+    $value = fmod($value + M_PI, M_PI * 2.0);
+    if ($value < 0.0) {
+        $value += M_PI * 2.0;
+    }
+
+    return $value - M_PI;
+}
+
+function app_sample_imagick_pixel(Imagick $source, int $srcWidth, int $srcHeight, float $x, float $y): array
+{
+    $x = (int) round($x);
+    $y = (int) round($y);
+
+    if ($srcWidth > 0) {
+        $x %= $srcWidth;
+        if ($x < 0) {
+            $x += $srcWidth;
+        }
+    }
+
+    if ($y < 0) {
+        $y = 0;
+    } elseif ($y >= $srcHeight) {
+        $y = $srcHeight - 1;
+    }
+
+    $pixel = $source->getImagePixelColor($x, $y);
+    $color = $pixel->getColor();
+
+    return [
+        (int) round((float) ($color['r'] ?? 0.0)),
+        (int) round((float) ($color['g'] ?? 0.0)),
+        (int) round((float) ($color['b'] ?? 0.0)),
+    ];
+}
+
+function app_sample_gd_pixel($source, int $srcWidth, int $srcHeight, float $x, float $y): array
+{
+    $x0 = (int) floor($x);
+    $y0 = (int) floor($y);
+    $x1 = $x0 + 1;
+    $y1 = $y0 + 1;
+
+    if ($srcWidth > 0) {
+        $x0 %= $srcWidth;
+        if ($x0 < 0) {
+            $x0 += $srcWidth;
+        }
+        $x1 %= $srcWidth;
+        if ($x1 < 0) {
+            $x1 += $srcWidth;
+        }
+    }
+
+    if ($y0 < 0) {
+        $y0 = 0;
+    } elseif ($y0 >= $srcHeight) {
+        $y0 = $srcHeight - 1;
+    }
+
+    if ($y1 < 0) {
+        $y1 = 0;
+    } elseif ($y1 >= $srcHeight) {
+        $y1 = $srcHeight - 1;
+    }
+
+    $fx = $x - floor($x);
+    $fy = $y - floor($y);
+
+    if (imageistruecolor($source)) {
+        $c00 = imagecolorat($source, $x0, $y0);
+        $c10 = imagecolorat($source, $x1, $y0);
+        $c01 = imagecolorat($source, $x0, $y1);
+        $c11 = imagecolorat($source, $x1, $y1);
+
+        $r = ((1 - $fx) * (1 - $fy) * (($c00 >> 16) & 0xFF))
+            + ($fx * (1 - $fy) * (($c10 >> 16) & 0xFF))
+            + ((1 - $fx) * $fy * (($c01 >> 16) & 0xFF))
+            + ($fx * $fy * (($c11 >> 16) & 0xFF));
+
+        $g = ((1 - $fx) * (1 - $fy) * (($c00 >> 8) & 0xFF))
+            + ($fx * (1 - $fy) * (($c10 >> 8) & 0xFF))
+            + ((1 - $fx) * $fy * (($c01 >> 8) & 0xFF))
+            + ($fx * $fy * (($c11 >> 8) & 0xFF));
+
+        $b = ((1 - $fx) * (1 - $fy) * ($c00 & 0xFF))
+            + ($fx * (1 - $fy) * ($c10 & 0xFF))
+            + ((1 - $fx) * $fy * ($c01 & 0xFF))
+            + ($fx * $fy * ($c11 & 0xFF));
+    } else {
+        $c00 = imagecolorsforindex($source, imagecolorat($source, $x0, $y0));
+        $c10 = imagecolorsforindex($source, imagecolorat($source, $x1, $y0));
+        $c01 = imagecolorsforindex($source, imagecolorat($source, $x0, $y1));
+        $c11 = imagecolorsforindex($source, imagecolorat($source, $x1, $y1));
+
+        $r = ((1 - $fx) * (1 - $fy) * ($c00['red'] ?? 0))
+            + ($fx * (1 - $fy) * ($c10['red'] ?? 0))
+            + ((1 - $fx) * $fy * ($c01['red'] ?? 0))
+            + ($fx * $fy * ($c11['red'] ?? 0));
+
+        $g = ((1 - $fx) * (1 - $fy) * ($c00['green'] ?? 0))
+            + ($fx * (1 - $fy) * ($c10['green'] ?? 0))
+            + ((1 - $fx) * $fy * ($c01['green'] ?? 0))
+            + ($fx * $fy * ($c11['green'] ?? 0));
+
+        $b = ((1 - $fx) * (1 - $fy) * ($c00['blue'] ?? 0))
+            + ($fx * (1 - $fy) * ($c10['blue'] ?? 0))
+            + ((1 - $fx) * $fy * ($c01['blue'] ?? 0))
+            + ($fx * $fy * ($c11['blue'] ?? 0));
+    }
+
+    return [(int) round($r), (int) round($g), (int) round($b)];
+}
+
+function app_render_panorama_thumbnail($source, int $srcWidth, int $srcHeight, string $thumbPath, float $pitch, float $yaw, float $hfov): bool
+{
+    $cameraHfov = deg2rad(max(1.0, min(175.0, $hfov)));
+    $cameraVfov = deg2rad(app_panorama_camera_fov($hfov, THUMB_WIDTH, THUMB_HEIGHT));
+    $tanHalfH = tan($cameraHfov / 2.0);
+    $tanHalfV = tan($cameraVfov / 2.0);
+    $yawRad = deg2rad($yaw);
+    $pitchRad = deg2rad($pitch);
+
+    if (class_exists('Imagick') && $source instanceof Imagick) {
+        $thumb = new Imagick();
+        $thumb->newImage(THUMB_WIDTH, THUMB_HEIGHT, new ImagickPixel('black'), 'jpeg');
+        $thumb->setImageFormat('jpeg');
+        $thumb->setImageCompressionQuality(86);
+
+        $pixels = [];
+        $pixelsSize = THUMB_WIDTH * THUMB_HEIGHT * 3;
+        $pixels = array_fill(0, $pixelsSize, 0);
+        $offset = 0;
+
+        for ($y = 0; $y < THUMB_HEIGHT; $y++) {
+            $v = (1.0 - (($y + 0.5) / THUMB_HEIGHT) * 2.0) * $tanHalfV;
+            for ($x = 0; $x < THUMB_WIDTH; $x++) {
+                $u = ((($x + 0.5) / THUMB_WIDTH) * 2.0 - 1.0) * $tanHalfH;
+                $lon = app_normalize_longitude(atan2($u, 1.0) + $yawRad);
+                $lat = max(-M_PI / 2.0, min(M_PI / 2.0, atan2($v, sqrt(($u * $u) + 1.0)) + $pitchRad));
+
+                $srcX = (($lon + M_PI) / (M_PI * 2.0)) * $srcWidth;
+                $srcY = ((M_PI / 2.0 - $lat) / M_PI) * $srcHeight;
+
+                [$r, $g, $b] = app_sample_imagick_pixel($source, $srcWidth, $srcHeight, $srcX, $srcY);
+                $pixels[$offset++] = $r;
+                $pixels[$offset++] = $g;
+                $pixels[$offset++] = $b;
+            }
+        }
+
+        $thumb->importImagePixels(0, 0, THUMB_WIDTH, THUMB_HEIGHT, 'RGB', Imagick::PIXEL_CHAR, $pixels);
+        $result = $thumb->writeImage($thumbPath);
+        $thumb->clear();
+        $thumb->destroy();
+        return $result;
+    }
+
+    if (extension_loaded('gd') && $source) {
+        $thumb = imagecreatetruecolor(THUMB_WIDTH, THUMB_HEIGHT);
+        $black = imagecolorallocate($thumb, 0, 0, 0);
+        imagefill($thumb, 0, 0, $black);
+
+        for ($y = 0; $y < THUMB_HEIGHT; $y++) {
+            $v = (1.0 - (($y + 0.5) / THUMB_HEIGHT) * 2.0) * $tanHalfV;
+            for ($x = 0; $x < THUMB_WIDTH; $x++) {
+                $u = ((($x + 0.5) / THUMB_WIDTH) * 2.0 - 1.0) * $tanHalfH;
+                $lon = app_normalize_longitude(atan2($u, 1.0) + $yawRad);
+                $lat = max(-M_PI / 2.0, min(M_PI / 2.0, atan2($v, sqrt(($u * $u) + 1.0)) + $pitchRad));
+
+                $srcX = (($lon + M_PI) / (M_PI * 2.0)) * $srcWidth;
+                $srcY = ((M_PI / 2.0 - $lat) / M_PI) * $srcHeight;
+
+                [$r, $g, $b] = app_sample_gd_pixel($source, $srcWidth, $srcHeight, $srcX, $srcY);
+                imagesetpixel($thumb, $x, $y, ($r << 16) | ($g << 8) | $b);
+            }
+        }
+
+        $result = app_save_jpeg($thumb, $thumbPath, 86);
+        imagedestroy($thumb);
+        return $result;
+    }
+
+    return false;
+}
+
+function app_create_thumbnail(string $sourcePath, string $thumbPath, string $mime, float $pitch = 0.0, float $yaw = 0.0, float $hfov = 100.0): bool
 {
     if (class_exists('Imagick')) {
         try {
             $image = new Imagick($sourcePath);
-            $image->setImageFormat('jpeg');
             $image->setImageColorspace(Imagick::COLORSPACE_SRGB);
-            $image->cropThumbnailImage(THUMB_WIDTH, THUMB_HEIGHT);
-            $image->setImageCompressionQuality(86);
-            $result = $image->writeImage($thumbPath);
+            $srcWidth = $image->getImageWidth();
+            $srcHeight = $image->getImageHeight();
+            if ($srcWidth <= 0 || $srcHeight <= 0) {
+                $image->clear();
+                $image->destroy();
+                return false;
+            }
+
+            $sourceRatio = $srcWidth / $srcHeight;
+            if ($sourceRatio >= 1.8) {
+                $result = app_render_panorama_thumbnail($image, $srcWidth, $srcHeight, $thumbPath, $pitch, $yaw, $hfov);
+            } else {
+                $image->setImageFormat('jpeg');
+                $image->cropThumbnailImage(THUMB_WIDTH, THUMB_HEIGHT);
+                $image->setImageCompressionQuality(86);
+                $result = $image->writeImage($thumbPath);
+            }
             $image->clear();
             $image->destroy();
             return $result;
@@ -301,6 +521,13 @@ function app_create_thumbnail(string $sourcePath, string $thumbPath, string $mim
             return false;
         }
 
+        $sourceRatio = $srcWidth / $srcHeight;
+        if ($sourceRatio >= 1.8) {
+            $result = app_render_panorama_thumbnail($source, $srcWidth, $srcHeight, $thumbPath, $pitch, $yaw, $hfov);
+            imagedestroy($source);
+            return $result;
+        }
+
         $targetRatio = THUMB_WIDTH / THUMB_HEIGHT;
         $sourceRatio = $srcWidth / $srcHeight;
 
@@ -319,6 +546,7 @@ function app_create_thumbnail(string $sourcePath, string $thumbPath, string $mim
         $thumb = imagecreatetruecolor(THUMB_WIDTH, THUMB_HEIGHT);
         $black = imagecolorallocate($thumb, 0, 0, 0);
         imagefill($thumb, 0, 0, $black);
+
         imagecopyresampled(
             $thumb,
             $source,

@@ -264,6 +264,12 @@ button, input {
     margin-top: 14px;
 }
 
+.field-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+}
+
 .field {
     display: grid;
     gap: 8px;
@@ -272,6 +278,7 @@ button, input {
 
 .field input[type="text"],
 .field input[type="password"],
+.field input[type="number"],
 .field input[type="file"] {
     width: 100%;
     padding: 12px 14px;
@@ -356,6 +363,10 @@ button, input {
 
 @media (max-width: 900px) {
     .admin-row {
+        grid-template-columns: 1fr;
+    }
+
+    .field-grid {
         grid-template-columns: 1fr;
     }
 
